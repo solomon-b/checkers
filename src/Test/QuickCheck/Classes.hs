@@ -19,11 +19,12 @@ module Test.QuickCheck.Classes
   , semigroup
   , monoid, monoidMorphism, semanticMonoid
   , functor, functorMorphism, semanticFunctor, functorMonoid
+  , contravariant, profunctor
   , apply, applyMorphism, semanticApply
   , applicative, applicativeMorphism, semanticApplicative
   , bind, bindMorphism, semanticBind, bindApply
   , monad, monadMorphism, semanticMonad, monadFunctor
-  , monadApplicative, arrow, arrowChoice, foldable, foldableFunctor, traversable
+  , monadApplicative, category, arrow, arrowChoice, foldable, foldableFunctor, traversable
   , monadPlus, monadOr, alt, alternative
   )
   where
@@ -32,8 +33,10 @@ import Data.Foldable (Foldable(..))
 import Data.Functor.Apply (Apply ((<.>)))
 import Data.Functor.Alt (Alt ((<!>)))
 import Data.Functor.Bind (Bind ((>>-)), apDefault)
+import Data.Functor.Contravariant (Contravariant, contramap)
 import qualified Data.Functor.Bind as B (Bind (join))
 import Data.List.NonEmpty (NonEmpty(..))
+import Data.Profunctor
 import Data.Semigroup (Semigroup (..))
 import Data.Monoid (Endo(..), Dual(..), Sum(..), Product(..))
 import Data.Traversable (fmapDefault, foldMapDefault)
@@ -45,6 +48,8 @@ import Text.Show.Functions ()
 
 import Test.QuickCheck.Checkers
 import Test.QuickCheck.Instances.Char ()
+import Control.Category (Category)
+import qualified Control.Category as Cat
 
 
 -- | Total ordering.
@@ -267,6 +272,52 @@ semanticFunctor :: forall f g.
   f () -> TestBatch
 semanticFunctor = const (functorMorphism (model1 :: forall b. f b -> g b))
 
+-- | Properties to check that the 'Contravariant' @m@ satisfies the contravariant functor
+-- properties.
+contravariant :: forall m a b c.
+           ( Contravariant m
+           , Arbitrary b, Arbitrary c
+           , CoArbitrary a, CoArbitrary b
+           , Show (m a), Show (m c), Arbitrary (m a), Arbitrary (m c), EqProp (m a)) =>
+           m (a,b,c) -> TestBatch
+contravariant = const ( "functor"
+                , [ ("identity", property identityP)
+                  , ("compose" , property composeP) ]
+                )
+ where
+   identityP :: Property
+   composeP  :: (b -> c) -> (a -> b) -> Property
+
+   identityP = contramap id =-= (id :: m a -> m a)
+   composeP g f = contramap f . contramap g =-= (contramap (g.f) :: m c -> m a)
+
+-- | Properties to check that the 'Contravariant' @m@ satisfies the contravariant functor
+-- properties.
+profunctor :: forall p a b c d.
+           ( Profunctor p
+           , Arbitrary a, Arbitrary b, Arbitrary c, Arbitrary d
+           , Arbitrary (p a b), Arbitrary (p b c)
+           , CoArbitrary a, CoArbitrary b, CoArbitrary c
+           , EqProp (p a d), EqProp (p b c), EqProp (p c d), Show (p a b), Show (p b c) ) => p (a,b,c,d) (a,b,c,d)
+  -> TestBatch
+profunctor = const ( "functor"
+                , [ ("dimap identity", property identityDimapP)
+                  , ("rmap identity", property identityRmapP)
+                  , ("lmap identity", property identityLmapP)
+                  , ("dimap is lmap after rmap", property dmapLmapRmapP)
+                  , ("compose", property composeP)
+                  ]
+                )
+ where
+   identityDimapP, identityRmapP, identityLmapP :: Property
+   dmapLmapRmapP  :: (a -> b) -> (c -> d) -> Property
+   composeP :: (c -> b) -> (b -> a) -> (c -> d) -> (b -> c) -> Property
+
+   identityDimapP = dimap id id =-= (id :: p b c -> p b c)
+   identityRmapP = rmap id =-= (id :: p b c -> p b c)
+   identityLmapP = lmap id =-= (id :: p b c -> p b c)
+   dmapLmapRmapP f g = dimap f g =-= ((lmap f . rmap g) :: p b c -> p a d)
+   composeP f g h i = dimap (g . f) (h . i) =-= ((dimap f h . dimap g i) :: p a b -> p c d )
 
 -- | Properties to check that the 'Apply' @m@ satisfies the apply
 -- properties
@@ -646,6 +697,27 @@ alternative = const ( "Alternative laws"
                       ]
                     )
 
+category :: forall cat a b c d.
+            (Category cat
+            , Arbitrary (cat a b), Arbitrary (cat b c), Arbitrary (cat c d)
+            , Show (cat a b), Show (cat b c), Show (cat c d)
+            , EqProp (cat a b), EqProp (cat a d)) =>
+            cat a (b,c,d) -> TestBatch
+category = const ("category laws"
+                 , [ ("right identity", property rightIdentityP)
+                   , ("left identity", property leftIdentityP)
+                   , ("associativity", property assocP)
+                   ]
+                 )
+  where
+    rightIdentityP :: cat a b -> Property
+    rightIdentityP f =  f Cat.. Cat.id =-= f
+
+    leftIdentityP :: cat a b -> Property
+    leftIdentityP f = Cat.id Cat.. f =-= f
+
+    assocP :: cat c d -> cat b c -> cat a b -> Property
+    assocP f g h = ((f Cat.. g) Cat.. h) =-= (f Cat.. (g Cat.. h))
 
 arrow :: forall a b c d e.
          ( Arrow a
