@@ -29,18 +29,22 @@ module Test.QuickCheck.Classes
   )
   where
 
+import Data.Bifoldable (Bifoldable (..))
 import Data.Foldable (Foldable(..))
 import Data.Functor.Apply (Apply ((<.>)))
 import Data.Functor.Alt (Alt ((<!>)))
 import Data.Functor.Bind (Bind ((>>-)), apDefault)
 import Data.Functor.Contravariant (Contravariant, contramap)
 import qualified Data.Functor.Bind as B (Bind (join))
+import Data.Functor.Compose (Compose (..))
+import Data.Functor.Identity (Identity (..))
 import Data.List.NonEmpty (NonEmpty(..))
 import Data.Profunctor
 import Data.Semigroup (Semigroup (..))
 import Data.Monoid (Endo(..), Dual(..), Sum(..), Product(..))
-import Data.Traversable (fmapDefault, foldMapDefault)
 import Control.Applicative (Alternative(..))
+import Control.Category (Category)
+import qualified Control.Category as Cat
 import Control.Monad (MonadPlus (..), ap, join)
 import Control.Arrow (Arrow,ArrowChoice,first,second,left,right,(>>>),arr)
 import Test.QuickCheck
@@ -48,12 +52,6 @@ import Text.Show.Functions ()
 
 import Test.QuickCheck.Checkers
 import Test.QuickCheck.Instances.Char ()
-import Control.Category (Category)
-import qualified Control.Category as Cat
-import Data.Bifoldable (Bifoldable (..))
-import Data.Functor.Classes (Show1)
-import Data.Functor.Identity
-import Data.Functor.Compose
 
 
 -- | Total ordering.
@@ -793,12 +791,13 @@ arrowChoice = const ("arrow choice laws"
     rightMovesP f g = (left f >>> right (arr g))
                         =-= ((right (arr g)) >>> left f)
 
-traversable :: forall t a b c f g.
-               ( Traversable t, Applicative f, Arbitrary (t a), Arbitrary (t b), Arbitrary (f b), Arbitrary (f c)
+traversable :: forall t a b c f.
+               ( Traversable t, Applicative f
+               , Arbitrary (t a), Arbitrary (t b), Arbitrary (f b), Arbitrary (f c)
                , CoArbitrary a, CoArbitrary b
                , Show (t a), Show (t b)
-               , EqProp (t b), EqProp (f (f (t c)))) => t (f a, g b, c) -- ^ 
-  -> TestBatch
+               , EqProp (t b), EqProp (f (f (t c)))) =>
+               t (f a, b, c) -> TestBatch
 traversable = const ( "traversable"
                     , [ ("identity", property identityP)
                       , ("composition", property compositionP)
